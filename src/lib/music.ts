@@ -51,8 +51,23 @@ export function keyPosition(
   }
 }
 
+const LUKA_LETTERS = new Set(['l', 'u', 'k', 'a'])
+
+/** Soft C major under the name, still inside the garden's scale. */
+export const LUKA_CHORD = [261.63, 329.63, 392.0] as const
+
+/** A little rising chime: C, E, G, then E again. */
+export const LUKA_JINGLE = [
+  { frequency: 523.25, at: 0 },
+  { frequency: 659.25, at: 0.16 },
+  { frequency: 783.99, at: 0.32 },
+  { frequency: 659.25, at: 0.5 },
+] as const
+
 export function printableKey(key: string): string | null {
   if (key.length !== 1 || key === ' ') return null
+  const letter = key.toLocaleLowerCase()
+  if (LUKA_LETTERS.has(letter)) return 'luka'
   const code = key.charCodeAt(0)
   if (code < 32 || code === 127) return null
   return key.toLocaleUpperCase()

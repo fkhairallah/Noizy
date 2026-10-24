@@ -1,3 +1,4 @@
+import { LUKA_CHORD, LUKA_JINGLE } from '../lib/music.ts'
 import { clamp } from '../lib/number.ts'
 
 export type NoteKind = 'move' | 'tap' | 'key'
@@ -88,6 +89,46 @@ export class SoftSynth {
     }
 
     this.voices.push({ stopAt: now + duration + 0.2, bus, oscs })
+  }
+
+  /** Name chime: a soft chord, then four pentatonic notes. */
+  playLuka(pan: number) {
+    if (this.disposed || this.failed || this.volume <= 0.001) return
+    const context = this.ensure()
+    if (!context || !this.master) return
+    if (context.state === 'suspended') void context.resume()
+
+    const now = context.currentTime
+    this.prune(now)
+    if (this.voices.length >= 14) this.releaseOldest(context)
+
+    const panner = context.createStereoPanner()
+    panner.pan.setValueAtTime(clamp(pan, -0.7, 0.7), now)
+    const bus = context.createGain()
+    bus.gain.setValueAtTime(1, now)
+    bus.connect(panner)
+    panner.connect(this.master)
+
+    const oscs = LUKA_CHORD.map((frequency) =>
+      this.attachTone(context, bus, frequency, now, 1.05, 0.07, 'sine'),
+    )
+    LUKA_JINGLE.forEach((note, index) => {
+      const last = index === LUKA_JINGLE.length - 1
+      oscs.push(
+        this.attachTone(
+          context,
+          bus,
+          note.frequency,
+          now + note.at,
+          last ? 0.72 : 0.4,
+          last ? 0.2 : 0.15,
+          'triangle',
+        ),
+      )
+    })
+
+    const tail = LUKA_JINGLE[LUKA_JINGLE.length - 1]?.at ?? 0
+    this.voices.push({ stopAt: now + tail + 0.95, bus, oscs })
   }
 
   private ensure(): AudioContext | null {

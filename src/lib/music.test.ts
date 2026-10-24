@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  LUKA_CHORD,
+  LUKA_JINGLE,
   SCALE,
   harmonyIndex,
   keyPosition,
@@ -54,7 +56,23 @@ test('key blooms stay on screen', () => {
 })
 
 test('printable keys become letters and modifiers stay quiet', () => {
-  assert.equal(printableKey('a'), 'A')
+  assert.equal(printableKey('b'), 'B')
   assert.equal(printableKey('Shift'), null)
   assert.equal(printableKey(' '), null)
+})
+
+test('l, u, k, and a spell luka', () => {
+  for (const key of ['l', 'L', 'u', 'U', 'k', 'K', 'a', 'A']) {
+    assert.equal(printableKey(key), 'luka')
+  }
+})
+
+test('the luka chime stays on the pentatonic garden', () => {
+  const phrase = [...LUKA_CHORD, ...LUKA_JINGLE.map((note) => note.frequency)]
+  for (const frequency of phrase) {
+    assert.ok(SCALE.some((tone) => Math.abs(frequency / tone - 1) < 0.02 || Math.abs(frequency / tone - 2) < 0.02))
+  }
+  for (let i = 1; i < LUKA_JINGLE.length; i += 1) {
+    assert.ok(LUKA_JINGLE[i]!.at > LUKA_JINGLE[i - 1]!.at)
+  }
 })

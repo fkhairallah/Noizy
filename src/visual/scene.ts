@@ -219,13 +219,14 @@ export class Scene {
     if (input.kind === 'key') this.keyShapes += 1
     if (!input.glyph) return
 
+    const named = input.glyph === 'luka'
     this.glyphs.push({
       x: input.x,
       y: input.y,
       born: this.clock,
-      life: 1.5,
+      life: named ? 2.4 : 1.5,
       char: input.glyph,
-      size: 64 * scale,
+      size: (named ? 72 : 64) * scale,
       color: palette.wash,
     })
     if (this.glyphs.length > 12) this.glyphs.shift()
@@ -573,7 +574,9 @@ export class Scene {
     this.ctx.textAlign = 'center'
     this.ctx.textBaseline = 'middle'
     this.ctx.fillStyle = rgba(glyph.color, clamp(alpha, 0, 1) * 0.9)
-    this.ctx.fillText(glyph.char, glyph.x, glyph.y - progress * rise)
+    const width = this.ctx.measureText(glyph.char).width
+    const x = clamp(glyph.x, width / 2 + 12, Math.max(width / 2 + 12, this.width - width / 2 - 12))
+    this.ctx.fillText(glyph.char, x, glyph.y - progress * rise)
   }
 
   private drawIdle() {

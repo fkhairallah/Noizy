@@ -77,11 +77,16 @@ export function Playground() {
       wake()
       scene.spawn({ x, y, kind, glyph, paletteIndex: index })
       const width = Math.max(window.innerWidth, 1)
+      const pan = clamp(x / width, 0, 1) * 2 - 1
+      if (glyph === 'luka') {
+        synth.playLuka(pan)
+        return
+      }
       synth.play({
         frequency: SCALE[index] ?? SCALE[0],
         harmony: kind === 'move' ? undefined : SCALE[harmonyIndex(index)],
         kind,
-        pan: clamp(x / width, 0, 1) * 2 - 1,
+        pan,
       })
     }
 
