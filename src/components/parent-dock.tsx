@@ -1,4 +1,4 @@
-import { Maximize2, Minimize2, Volume2, VolumeX } from 'lucide-react'
+import { Maximize2, Volume2, VolumeX } from 'lucide-react'
 import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -7,14 +7,14 @@ type ParentDockProps = {
   volume: number
   fullscreen: boolean
   onVolumeChange: (volume: number) => void
-  onToggleFullscreen: () => void
+  onEnterFullscreen: () => void
 }
 
 export function ParentDock({
   volume,
   fullscreen,
   onVolumeChange,
-  onToggleFullscreen,
+  onEnterFullscreen,
 }: ParentDockProps) {
   const remembered = useRef(volume > 0 ? volume : 0.6)
   const muted = volume <= 0.001
@@ -31,7 +31,7 @@ export function ParentDock({
   return (
     <footer className="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       <div
-        data-parent-dock
+        data-garden-control
         className="pointer-events-auto flex w-full max-w-sm items-center gap-2 rounded-full border border-white/20 bg-[#120a22]/65 py-2 pr-2 pl-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:max-w-md"
       >
         <Button
@@ -59,14 +59,16 @@ export function ParentDock({
         <span className="w-9 text-right text-sm text-white/80 tabular-nums">
           {Math.round(volume * 100)}
         </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={fullscreen ? 'Leave full screen' : 'Fill the screen'}
-          onClick={onToggleFullscreen}
-        >
-          {fullscreen ? <Minimize2 /> : <Maximize2 />}
-        </Button>
+        {fullscreen ? null : (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Fill the screen and hold the keys"
+            onClick={onEnterFullscreen}
+          >
+            <Maximize2 />
+          </Button>
+        )}
       </div>
     </footer>
   )

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { SoftSynth } from '@/audio/synth'
+import { ExitFullscreen } from '@/components/exit-fullscreen'
 import { Invitation } from '@/components/invitation'
 import { ParentDock } from '@/components/parent-dock'
+import { enterFullscreenCapture, leaveFullscreenCapture, lockableKeyboard } from '@/lib/capture'
 import { harmonyIndex, keyPosition, noteIndexForKey, noteIndexForPoint, printableKey, SCALE } from '@/lib/music'
 import { clamp } from '@/lib/number'
 import { readVolume, writeVolume } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 import { Scene } from '@/visual/scene'
 
-function inParentDock(target: EventTarget | null): boolean {
-  return target instanceof Element && Boolean(target.closest('[data-parent-dock]'))
+function inGardenControl(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest('[data-garden-control]'))
 }
 
 export function Playground() {
@@ -21,6 +23,9 @@ export function Playground() {
   const [fullscreen, setFullscreen] = useState(false)
   const [surfaceError, setSurfaceError] = useState(false)
   const [audioMessage, setAudioMessage] = useState<string | null>(null)
+  const [captureMessage, setCaptureMessage] = useState<string | null>(null)
+  const captureRef = useRef(false)
+  const wakeRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -49,14 +54,23 @@ export function Playground() {
     motion.addEventListener('change', applyMotion)
 
     const pointers = new Map<number, { x: number; y: number; distance: number; lastSound: number }>()
+    const stage = canvas.closest('main')
     let keyCursor = 0
+    let lastKeyAt = 0
     let woke = false
 
     const wake = () => {
       if (woke) return
       woke = true
       scene.setIdle(false)
-      setAwake(true)
+    }
+    wakeRef.current = wake
+
+    // The garden is the keyboard target. Dock controls are for the pointer;
+    // if they keep focus, a baby's key mashing never reaches the page.
+    const claimKeyboard = () => {
+      if (!(stage instanceof HTMLElement) || document.activeElement === stage) return
+      stage.focus({ preventScroll: true })
     }
 
     const playAt = (x: number, y: number, index: number, kind: 'move' | 'tap' | 'key', glyph: string | null) => {
@@ -72,7 +86,8 @@ export function Playground() {
     }
 
     const onPointerDown = (event: PointerEvent) => {
-      if (inParentDock(event.target)) return
+      if (inGardenControl(event.target)) return
+      claimKeyboard()
       pointers.set(event.pointerId, {
         x: event.clientX,
         y: event.clientY,
@@ -84,7 +99,8 @@ export function Playground() {
     }
 
     const onPointerMove = (event: PointerEvent) => {
-      if (inParentDock(event.target)) return
+      if (inGardenControl(event.target)) return
+      claimKeyboard()
       scene.follow(event.clientX, event.clientY)
       const previous = pointers.get(event.pointerId)
       if (!previous) {
@@ -118,18 +134,41 @@ export function Playground() {
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat || inParentDock(event.target)) return
+      const capturing = captureRef.current
+      if (capturing) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      if (!capturing && (event.metaKey || event.ctrlKey || event.altKey)) return
+      const now = performance.now()
+      // A held key repeats. Answer it, just not on every repeat tick.
+      if (event.repeat && now - lastKeyAt < 170) return
+      const docked = inGardenControl(event.target)
+      if (docked) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      lastKeyAt = now
       const point = keyPosition(keyCursor, window.innerWidth, window.innerHeight)
       keyCursor += 1
       playAt(point.x, point.y, noteIndexForKey(event.code), 'key', printableKey(event.key))
-      if (event.key === ' ' || event.key.startsWith('Arrow')) event.preventDefault()
+      if (docked || event.key === ' ' || event.key.startsWith('Arrow')) event.preventDefault()
+      if (docked) claimKeyboard()
     }
 
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (!captureRef.current) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+
+    claimKeyboard()
     window.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerDone)
     window.addEventListener('pointercancel', onPointerDone)
-    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keyup', onKeyUp, true)
 
     return () => {
       motion.removeEventListener('change', applyMotion)
@@ -137,7 +176,8 @@ export function Playground() {
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerDone)
       window.removeEventListener('pointercancel', onPointerDone)
-      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('keyup', onKeyUp, true)
       scene.stop()
       synth.dispose()
       sceneRef.current = null
@@ -146,10 +186,36 @@ export function Playground() {
   }, [])
 
   useEffect(() => {
-    const sync = () => setFullscreen(document.fullscreenElement !== null)
+    const sync = () => {
+      const active = document.fullscreenElement !== null
+      setFullscreen(active)
+      if (active) return
+      captureRef.current = false
+      lockableKeyboard()?.unlock()
+    }
     document.addEventListener('fullscreenchange', sync)
     return () => document.removeEventListener('fullscreenchange', sync)
   }, [])
+
+  const dismissGate = () => {
+    wakeRef.current()
+    setAwake(true)
+  }
+
+  const enterCapture = async () => {
+    setCaptureMessage(null)
+    captureRef.current = true
+    const result = await enterFullscreenCapture()
+    if (result === 'blocked') {
+      captureRef.current = false
+      setCaptureMessage('Full screen was blocked. Allow it for this site, then try again.')
+      return
+    }
+    dismissGate()
+    if (result === 'unlocked') {
+      setCaptureMessage('Full screen is on, but this browser can still let Alt out. Chrome or Edge holds those keys.')
+    }
+  }
 
   const commitVolume = (next: number) => {
     const safe = clamp(next, 0, 1)
@@ -158,12 +224,8 @@ export function Playground() {
     writeVolume(safe)
   }
 
-  const toggleFullscreen = () => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => undefined)
-      return
-    }
-    void document.documentElement.requestFullscreen().catch(() => undefined)
+  const leaveCapture = () => {
+    leaveFullscreenCapture()
   }
 
   if (surfaceError) {
@@ -181,14 +243,21 @@ export function Playground() {
   }
 
   return (
-    <main className="relative h-dvh w-full overflow-hidden bg-[#140c28] text-white">
+    <main tabIndex={-1} className="relative h-dvh w-full overflow-hidden bg-[#140c28] text-white outline-none">
       <h1 className="sr-only">Noizy, a sound and color garden for Luka</h1>
       <p className="sr-only">
         Move the mouse, touch the screen, or press any key. Each one plays a soft musical note and
-        paints a colorful pattern. Volume and full screen controls sit along the bottom.
+        paints a colorful pattern. Full screen holds Alt and the other keys. Double-click Exit to
+        leave. Volume sits along the bottom.
       </p>
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none" aria-hidden="true" />
-      <Invitation awake={awake} />
+      <Invitation
+        awake={awake}
+        notice={awake ? null : captureMessage}
+        onFullScreen={() => void enterCapture()}
+        onCancel={dismissGate}
+      />
+      {fullscreen ? <ExitFullscreen onExit={leaveCapture} /> : null}
       <div
         className={cn(
           'pointer-events-none absolute top-5 left-5 z-20 transition-opacity duration-700 sm:top-8 sm:left-8',
@@ -202,12 +271,17 @@ export function Playground() {
             {audioMessage}
           </p>
         ) : null}
+        {awake && captureMessage !== null ? (
+          <p role="status" className="mt-2 max-w-xs text-sm text-[#ffd6e4]">
+            {captureMessage}
+          </p>
+        ) : null}
       </div>
       <ParentDock
         volume={volume}
         fullscreen={fullscreen}
         onVolumeChange={commitVolume}
-        onToggleFullscreen={toggleFullscreen}
+        onEnterFullscreen={() => void enterCapture()}
       />
     </main>
   )
